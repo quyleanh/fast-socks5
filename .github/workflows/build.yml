@@ -29,13 +29,12 @@ jobs:
           toolchain: stable
           override: true
       - name: Build release binary
-        working-directory: fast-socks5
         run: cargo build --release
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: fast-socks5-x86_64
-          path: fast-socks5/target/release/fast-socks5
+          path: target/release/fast-socks5
 
   build-aarch64:
     if: ${{ github.event.inputs.arch == 'all' || github.event.inputs.arch == 'aarch64' }}
@@ -55,19 +54,18 @@ jobs:
           override: true
       - name: Configure linker
         run: |
-          mkdir -p fast-socks5/.cargo
-          cat <<EOF > fast-socks5/.cargo/config.toml
+          mkdir -p .cargo
+          cat <<EOF > .cargo/config.toml
           [target.aarch64-unknown-linux-gnu]
           linker = "aarch64-linux-gnu-gcc"
           EOF
       - name: Build release binary
-        working-directory: fast-socks5
         run: cargo build --release --target aarch64-unknown-linux-gnu
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: fast-socks5-aarch64
-          path: fast-socks5/target/aarch64-unknown-linux-gnu/release/fast-socks5
+          path: target/aarch64-unknown-linux-gnu/release/fast-socks5
 
   build-armv7:
     if: ${{ github.event.inputs.arch == 'all' || github.event.inputs.arch == 'armv7' }}
@@ -87,16 +85,15 @@ jobs:
           override: true
       - name: Configure linker
         run: |
-          mkdir -p fast-socks5/.cargo
-          cat <<EOF > fast-socks5/.cargo/config.toml
+          mkdir -p .cargo
+          cat <<EOF > .cargo/config.toml
           [target.armv7-unknown-linux-gnueabihf]
           linker = "arm-linux-gnueabihf-gcc"
           EOF
       - name: Build release binary
-        working-directory: fast-socks5
         run: cargo build --release --target armv7-unknown-linux-gnueabihf
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: fast-socks5-armv7
-          path: fast-socks5/target/armv7-unknown-linux-gnueabihf/release/fast-socks5
+          path: target/armv7-unknown-linux-gnueabihf/release/fast-socks5
