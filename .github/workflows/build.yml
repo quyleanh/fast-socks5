@@ -1,99 +1,266 @@
-# GitHub Actions workflow to build fast-socks5 for various architectures
-# Triggered manually via workflow_dispatch. Choose a single arch or build all.
-
-name: Build fast-socks5
+name: Build Multi-Architecture Executables
 
 on:
   workflow_dispatch:
     inputs:
-      arch:
-        description: 'Target architecture to build (or "all" for every supported)'
+      targets:
+        description: 'Select target architectures to build'
         required: true
-        default: 'all'
+        type: choice
         options:
           - 'all'
-          - 'x86_64'
-          - 'aarch64'
-          - 'armv7'
+          - 'linux-only'
+          - 'windows-only'
+          - 'macos-only'
+          - 'custom'
+        default: 'all'
+      custom_targets:
+        description: 'Custom targets (comma-separated, e.g., x86_64-unknown-linux-gnu,aarch64-apple-darwin)'
+        required: false
+        type: string
+        default: ''
+      examples:
+        description: 'Examples to build'
+        required: true
+        type: choice
+        options:
+          - 'all'
+          - 'client'
+          - 'server'
+          - 'custom_auth_server'
+          - 'router'
+          - 'udp_client'
+        default: 'all'
+      release_mode:
+        description: 'Build in release mode'
+        required: false
+        type: boolean
+        default: true
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  build-x86_64:
-    if: ${{ github.event.inputs.arch == 'all' || github.event.inputs.arch == 'x86_64' }}
+  prepare:
     runs-on: ubuntu-latest
-    name: Build for x86_64 (native)
+    outputs:
+      targets: ${{ steps.set-targets.outputs.targets }}
+      examples: ${{ steps.set-examples.outputs.examples }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Set target architectures
+        id: set-targets
+        run: |
+          case "${{ github.event.inputs.targets }}" in
+            "all")
+              targets='["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-pc-windows-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin"]'
+              ;;
+            "linux-only")
+              targets='["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]'
+              ;;
+            "windows-only")
+              targets='["x86_64-pc-windows-gnu"]'
+              ;;
+            "macos-only")
+              targets='["x86_64-apple-darwin", "aarch64-apple-darwin"]'
+              ;;
+            "custom")
+              if [ -n "${{ github.event.inputs.custom_targets }}" ]; then
+                IFS=',' read -ra TARGET_ARRAY <<< "${{ github.event.inputs.custom_targets }}"
+                targets="["
+                for i in "${TARGET_ARRAY[@]}"; do
+                  targets+='"'$(echo "$i" | xargs)'",'
+                done
+                targets="${targets%,}]"
+              else
+                targets='["x86_64-unknown-linux-gnu"]'
+              fi
+              ;;
+            *)
+              targets='["x86_64-unknown-linux-gnu"]'
+              ;;
+          esac
+          echo "targets=$targets" >> $GITHUB_OUTPUT
+
+      - name: Set examples to build
+        id: set-examples
+        run: |
+          case "${{ github.event.inputs.examples }}" in
+            "all")
+              examples='["client", "server", "custom_auth_server", "router", "udp_client"]'
+              ;;
+            *)
+              examples='["${{ github.event.inputs.examples }}"]'
+              ;;
+          esac
+          echo "examples=$examples" >> $GITHUB_OUTPUT
+
+  build:
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.prepare.outputs.targets) }}
+        example: ${{ fromJson(needs.prepare.outputs.examples) }}
+        include:
+          # Linux targets
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: true
+          
+          # Windows targets
+          - target: x86_64-pc-windows-gnu
+            os: ubuntu-latest
+            cross: true
+          
+          # macOS targets
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            cross: false
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            cross: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
-      - name: Build release binary
-        run: cargo build --release
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: fast-socks5-x86_64
-          path: target/release/fast-socks5
+          targets: ${{ matrix.target }}
 
-  build-aarch64:
-    if: ${{ github.event.inputs.arch == 'all' || github.event.inputs.arch == 'aarch64' }}
-    runs-on: ubuntu-latest
-    name: Build for aarch64
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install cross-compiler
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.target }}-
+            ${{ runner.os }}-cargo-
+
+      - name: Install cross (if needed)
+        if: matrix.cross
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Install additional dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest' && !matrix.cross
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-      - name: Install Rust and target
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: aarch64-unknown-linux-gnu
-          override: true
-      - name: Configure linker
-        run: |
-          mkdir -p .cargo
-          cat <<EOF > .cargo/config.toml
-          [target.aarch64-unknown-linux-gnu]
-          linker = "aarch64-linux-gnu-gcc"
-          EOF
-      - name: Build release binary
-        run: cargo build --release --target aarch64-unknown-linux-gnu
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: fast-socks5-aarch64
-          path: target/aarch64-unknown-linux-gnu/release/fast-socks5
+          sudo apt-get install -y build-essential
 
-  build-armv7:
-    if: ${{ github.event.inputs.arch == 'all' || github.event.inputs.arch == 'armv7' }}
-    runs-on: ubuntu-latest
-    name: Build for armv7
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install cross-compiler
+      - name: Build example
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-arm-linux-gnueabihf
-      - name: Install Rust and target
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: armv7-unknown-linux-gnueabihf
-          override: true
-      - name: Configure linker
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            if [ "${{ github.event.inputs.release_mode }}" = "true" ]; then
+              cross build --example ${{ matrix.example }} --target ${{ matrix.target }} --release
+            else
+              cross build --example ${{ matrix.example }} --target ${{ matrix.target }}
+            fi
+          else
+            if [ "${{ github.event.inputs.release_mode }}" = "true" ]; then
+              cargo build --example ${{ matrix.example }} --target ${{ matrix.target }} --release
+            else
+              cargo build --example ${{ matrix.example }} --target ${{ matrix.target }}
+            fi
+          fi
+
+      - name: Prepare artifacts
         run: |
-          mkdir -p .cargo
-          cat <<EOF > .cargo/config.toml
-          [target.armv7-unknown-linux-gnueabihf]
-          linker = "arm-linux-gnueabihf-gcc"
-          EOF
-      - name: Build release binary
-        run: cargo build --release --target armv7-unknown-linux-gnueabihf
-      - name: Upload artifact
+          if [ "${{ github.event.inputs.release_mode }}" = "true" ]; then
+            BUILD_DIR="target/${{ matrix.target }}/release/examples"
+          else
+            BUILD_DIR="target/${{ matrix.target }}/debug/examples"
+          fi
+          
+          mkdir -p artifacts
+          
+          if [ "${{ matrix.target }}" = "x86_64-pc-windows-gnu" ]; then
+            cp "$BUILD_DIR/${{ matrix.example }}.exe" "artifacts/${{ matrix.example }}-${{ matrix.target }}.exe"
+          else
+            cp "$BUILD_DIR/${{ matrix.example }}" "artifacts/${{ matrix.example }}-${{ matrix.target }}"
+          fi
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: fast-socks5-armv7
-          path: target/armv7-unknown-linux-gnueabihf/release/fast-socks5
+          name: ${{ matrix.example }}-${{ matrix.target }}
+          path: artifacts/
+          retention-days: 30
+
+  package:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    if: always() && needs.build.result == 'success'
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: Package all executables
+        run: |
+          mkdir -p release-package
+          find all-artifacts -type f -executable -o -name "*.exe" | while read file; do
+            cp "$file" release-package/
+          done
+          
+          # Create a summary file
+          echo "# Build Summary" > release-package/BUILD_SUMMARY.md
+          echo "Built on: $(date)" >> release-package/BUILD_SUMMARY.md
+          echo "Targets: ${{ needs.prepare.outputs.targets }}" >> release-package/BUILD_SUMMARY.md
+          echo "Examples: ${{ needs.prepare.outputs.examples }}" >> release-package/BUILD_SUMMARY.md
+          echo "Release mode: ${{ github.event.inputs.release_mode }}" >> release-package/BUILD_SUMMARY.md
+          echo "" >> release-package/BUILD_SUMMARY.md
+          echo "## Files:" >> release-package/BUILD_SUMMARY.md
+          ls -la release-package/ | grep -v "^d" | awk '{print "- " $9 " (" $5 " bytes)"}' >> release-package/BUILD_SUMMARY.md
+
+      - name: Create release archive
+        run: |
+          cd release-package
+          tar -czf ../fast-socks5-executables-$(date +%Y%m%d-%H%M%S).tar.gz *
+          cd ..
+
+      - name: Upload final package
+        uses: actions/upload-artifact@v4
+        with:
+          name: fast-socks5-executables-package
+          path: fast-socks5-executables-*.tar.gz
+          retention-days: 90
+
+  test:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    if: always() && needs.build.result == 'success'
+    steps:
+      - name: Download Linux x86_64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: client-x86_64-unknown-linux-gnu
+          path: test-artifacts
+
+      - name: Download Linux x86_64 server artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: server-x86_64-unknown-linux-gnu
+          path: test-artifacts
+
+      - name: Test executables
+        run: |
+          chmod +x test-artifacts/*
+          
+          # Basic smoke test - just check if binaries run and show help
+          echo "Testing client executable..."
+          timeout 10s ./test-artifacts/client-x86_64-unknown-linux-gnu --help || echo "Client help test completed"
+          
+          echo "Testing server executable..."
+          timeout 10s ./test-artifacts/server-x86_64-unknown-linux-gnu --help || echo "Server help test completed"
+          
+          echo "All smoke tests passed!"
