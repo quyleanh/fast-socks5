@@ -57,9 +57,9 @@ jobs:
         run: |
           mkdir -p fast-socks5/.cargo
           cat <<EOF > fast-socks5/.cargo/config.toml
-[target.aarch64-unknown-linux-gnu]
-linker = "aarch64-linux-gnu-gcc"
-EOF
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
       - name: Build release binary
         working-directory: fast-socks5
         run: cargo build --release --target aarch64-unknown-linux-gnu
@@ -89,9 +89,9 @@ EOF
         run: |
           mkdir -p fast-socks5/.cargo
           cat <<EOF > fast-socks5/.cargo/config.toml
-[target.armv7-unknown-linux-gnueabihf]
-linker = "arm-linux-gnueabihf-gcc"
-EOF
+          [target.armv7-unknown-linux-gnueabihf]
+          linker = "arm-linux-gnueabihf-gcc"
+          EOF
       - name: Build release binary
         working-directory: fast-socks5
         run: cargo build --release --target armv7-unknown-linux-gnueabihf
