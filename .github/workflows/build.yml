@@ -1,0 +1,100 @@
+# GitHub Actions workflow to build fast-socks5 for various architectures
+# Triggered manually via workflow_dispatch. Choose a single arch or build all.
+
+name: Build fast-socks5
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Target architecture to build (or "all" for every supported)'
+        required: true
+        default: 'all'
+        options:
+          - 'all'
+          - 'x86_64'
+          - 'aarch64'
+          - 'armv7'
+
+jobs:
+  build-x86_64:
+    if: ${{ github.event.inputs.arch == 'all' || github.event.inputs.arch == 'x86_64' }}
+    runs-on: ubuntu-latest
+    name: Build for x86_64
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Rust and target
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-unknown-linux-gnu
+          override: true
+      - name: Build release binary
+        run: cargo build --release --target x86_64-unknown-linux-gnu
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: fast-socks5-x86_64
+          path: target/x86_64-unknown-linux-gnu/release/fast-socks5
+
+  build-aarch64:
+    if: ${{ github.event.inputs.arch == 'all' || github.event.inputs.arch == 'aarch64' }}
+    runs-on: ubuntu-latest
+    name: Build for aarch64
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Install Rust and target
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-unknown-linux-gnu
+          override: true
+      - name: Configure linker
+        run: |
+          mkdir -p .cargo
+          cat <<EOF > .cargo/config.toml
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+EOF
+      - name: Build release binary
+        run: cargo build --release --target aarch64-unknown-linux-gnu
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: fast-socks5-aarch64
+          path: target/aarch64-unknown-linux-gnu/release/fast-socks5
+
+  build-armv7:
+    if: ${{ github.event.inputs.arch == 'all' || github.event.inputs.arch == 'armv7' }}
+    runs-on: ubuntu-latest
+    name: Build for armv7
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf
+      - name: Install Rust and target
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: armv7-unknown-linux-gnueabihf
+          override: true
+      - name: Configure linker
+        run: |
+          mkdir -p .cargo
+          cat <<EOF > .cargo/config.toml
+[target.armv7-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"
+EOF
+      - name: Build release binary
+        run: cargo build --release --target armv7-unknown-linux-gnueabihf
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: fast-socks5-armv7
+          path: target/armv7-unknown-linux-gnueabihf/release/fast-socks5
