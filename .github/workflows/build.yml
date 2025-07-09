@@ -20,22 +20,22 @@ jobs:
   build-x86_64:
     if: ${{ github.event.inputs.arch == 'all' || github.event.inputs.arch == 'x86_64' }}
     runs-on: ubuntu-latest
-    name: Build for x86_64
+    name: Build for x86_64 (native)
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust and target
+      - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          target: x86_64-unknown-linux-gnu
           override: true
       - name: Build release binary
-        run: cargo build --release --target x86_64-unknown-linux-gnu
+        working-directory: fast-socks5
+        run: cargo build --release
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: fast-socks5-x86_64
-          path: target/x86_64-unknown-linux-gnu/release/fast-socks5
+          path: fast-socks5/target/release/fast-socks5
 
   build-aarch64:
     if: ${{ github.event.inputs.arch == 'all' || github.event.inputs.arch == 'aarch64' }}
@@ -55,18 +55,19 @@ jobs:
           override: true
       - name: Configure linker
         run: |
-          mkdir -p .cargo
-          cat <<EOF > .cargo/config.toml
-          [target.aarch64-unknown-linux-gnu]
-          linker = "aarch64-linux-gnu-gcc"
-          EOF
+          mkdir -p fast-socks5/.cargo
+          cat <<EOF > fast-socks5/.cargo/config.toml
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+EOF
       - name: Build release binary
+        working-directory: fast-socks5
         run: cargo build --release --target aarch64-unknown-linux-gnu
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: fast-socks5-aarch64
-          path: target/aarch64-unknown-linux-gnu/release/fast-socks5
+          path: fast-socks5/target/aarch64-unknown-linux-gnu/release/fast-socks5
 
   build-armv7:
     if: ${{ github.event.inputs.arch == 'all' || github.event.inputs.arch == 'armv7' }}
@@ -86,15 +87,16 @@ jobs:
           override: true
       - name: Configure linker
         run: |
-          mkdir -p .cargo
-          cat <<EOF > .cargo/config.toml
-          [target.armv7-unknown-linux-gnueabihf]
-          linker = "arm-linux-gnueabihf-gcc"
-          EOF
+          mkdir -p fast-socks5/.cargo
+          cat <<EOF > fast-socks5/.cargo/config.toml
+[target.armv7-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"
+EOF
       - name: Build release binary
+        working-directory: fast-socks5
         run: cargo build --release --target armv7-unknown-linux-gnueabihf
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: fast-socks5-armv7
-          path: target/armv7-unknown-linux-gnueabihf/release/fast-socks5
+          path: fast-socks5/target/armv7-unknown-linux-gnueabihf/release/fast-socks5
